@@ -13,21 +13,27 @@ Ce projet met en oeuvre un modèle LightGBM de prédiction du risque de défaut 
 
 ```text
 P1_Code_Python/
-├── app/
-│   ├── app.py              # Dashboard Streamlit
-│   ├── main.py             # API FastAPI
+├── src/
+│   ├── api.py              # API FastAPI
 │   ├── build_database.py   # Construction de credit_risk.db depuis des CSV
-│   ├── check_db.py         # Vérification du contenu de la base
-│   └── init_bdd.py         # Initialisation depuis un parquet préparé
 ├── models/
 │   └── lightgbm_model.txt
 ├── notebooks/
 │   └── lightgbm_script.py
 ├── src/                    # Données CSV et fichiers de résultats
-├── tests/                  # Tests automatisés
-├── .github/workflows/      # Workflows GitHub Actions
-├── requirements.txt
+├── tests/                  # Tests automatisés API et tests unitaires/API (Pytest/Pandera)
+├── .github/workflows/      # Workflows GitHub Actions, CI/CD yaml
+├── monitoring/      		# rapports de dérive (Drif) Evidently AI
+├── logs/            		# le fichier de sauvegarde de données de production (production_data.csv)
+├── docs/            		# documentation mkdocs
+├── main.py             	# code principal lançant l'API et l'interface Streamlit
+├── app.py              	# Interface/Dashboard Streamlit
+├── CHANGELOG.md			# fichier Markdown qui liste chronologiquement tous les changements apportés au fil de ses version
+├── Dockerfile				# liste d'instructions pour créer automatiquement une image
+├── .gitignore			 	# liste des fichiers/dossiers ignorés dans le contrôle de version
+├── requirements.txt		# liste l'ensemble des bibliothèques et packages externes nécessaires
 └── README.md
+
 ```
 
 ## 2. Prérequis
@@ -66,13 +72,13 @@ Les dépendances principales sont `pandas`, `numpy`, `lightgbm`, `streamlit`, `p
 
 Le script de modélisation situé dans `notebooks/lightgbm_script.py` lit les fichiers suivants :
 
-- `src/application_train.csv` ;
-- `src/application_test.csv` ;
-- `src/bureau.csv` et `src/bureau_balance.csv` ;
-- `src/previous_application.csv` ;
-- `src/POS_CASH_balance.csv` ;
-- `src/installments_payments.csv` ;
-- `src/credit_card_balance.csv`.
+- `Data/raw//application_train.csv` ;
+- `Data/raw/application_test.csv` ;
+- `Data/raw/bureau.csv` et `src/bureau_balance.csv` ;
+- `Data/raw/previous_application.csv` ;
+- `Data/raw/POS_CASH_balance.csv` ;
+- `Data/raw/installments_payments.csv` ;
+- `Data/raw/credit_card_balance.csv`.
 
 Le pipeline effectue notamment le one-hot encoding, les agrégations par `SK_ID_CURR`, le feature engineering et l'entraînement LightGBM avec validation croisée. Le modèle final doit être disponible sous :
 
@@ -83,8 +89,8 @@ models/lightgbm_model.txt
 Les fichiers de prédictions et d'importance des variables utilisés par la base sont notamment :
 
 ```fichier  csv de resultats Lightgbm
-src/submission_kernel02.csv
-src/feature_importance.csv
+input/submission_kernel02.csv
+input/feature_importance.csv
 ```
 
 ## 5. Construction de la base SQLite
@@ -100,20 +106,13 @@ Cette commande crée ou remplace `credit_risk.db` et génère principalement :
 - `client_features` : données clients fusionnées avec les prédictions ;
 - `feature_importance` : importance moyenne des variables.
 
-Vérifier ensuite la base :
-
-```powershell
-python .\app\check_db.py
-```
-
-Le script `app/init_bdd.py` correspond à un autre mode d'initialisation basé sur `src/lightgbm_train_engineered.parquet`. Ce fichier parquet doit exister avant d'utiliser ce script.
 
 ## 6. Lancer le dashboard Streamlit
 
 Depuis la racine du projet :
 
 ```powershell
-streamlit run .\app\app.py
+streamlit run app.py
 ```
 
 Le dashboard permet de :
@@ -125,8 +124,8 @@ Le dashboard permet de :
 
 La règle métier utilisée dans l'interface est :
 
-- probabilité `< 0.10` : `APPROVED` ;
-- probabilité `>= 0.10` : `REFUSED`.
+- probabilité `< 0.30` : `APPROVED` ;
+- probabilité `>= 0.30` : `REFUSED`.
 
 ## 7. Lancer l'API FastAPI
 
@@ -253,6 +252,32 @@ Lancer FastAPI sur un autre port :
 ```powershell
 uvicorn app.main:app --reload --port 8001
 ```
+
+## Assistant RAG Mistral
+
+Le sous-projet `P10_DSML` contient un assistant RAG basé sur FAISS et Mistral ainsi qu'un script d'évaluation RAGAS. Depuis la racine du dépôt, entrez dans le dossier du sous-projet, puis créez l'environnement et installez ses dépendances :
+
+```powershell
+Set-Location .\P10_DSML
+uv venv
+uv pip install --python .venv\Scripts\python.exe -r requirements.txt
+```
+
+Créez un fichier `.env` dans `P10_DSML` et configurez votre clé API sans la publier :
+
+```text
+MISTRAL_API_KEY=votre_clé_api_mistral
+```
+
+Vérifiez que `vector_db/faiss_index.idx` et `vector_db/document_chunks.pkl` existent; sinon, lancez l'indexation avec `uv run python indexer.py`.
+
+Lancer l'évaluation :
+
+```powershell
+uv run python evaluate_ragas.py
+```
+
+Le script calcule `faithfulness`, `answer_relevancy`, `context_precision` et `context_recall`, puis enregistre les résultats dans `ragas_evaluation_results.csv`. Il envoie des requêtes à l'API Mistral, susceptibles d'être facturées et soumises à des quotas. La concurrence RAGAS est limitée à un worker. En cas de réponse HTTP `429`, vérifiez les limites de débit et les crédits du compte avant de relancer.
 
 ### arcitecture stramlit et Fastapi
 

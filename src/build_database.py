@@ -42,18 +42,16 @@ def build_unified_database_from_csv(
             print(
                 "⚠️ Pas de correspondance exacte sur SK_ID_CURR (train vs submission). Fusion outer appliquée."
             )
-            df_merged = df_client.merge(
-                df_preds, on="SK_ID_CURR", how="left"
-            ).fillna({"DECISION": "N/A"})
+            df_merged = df_client.merge(df_preds, on="SK_ID_CURR", how="left").fillna(
+                {"DECISION": "N/A"}
+            )
     else:
         df_merged = df_client.copy()
         df_merged["DECISION"] = "N/A"
 
     # 3. Écriture dans SQLite
     df_merged.to_sql("client_features", conn, if_exists="replace", index=False)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sk_id ON client_features(SK_ID_CURR);"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_sk_id ON client_features(SK_ID_CURR);")
     print(
         f"Table 'client_features' enregistrée ({df_merged.shape[1]} colonnes, {len(df_merged)} lignes)."
     )
@@ -68,9 +66,7 @@ def build_unified_database_from_csv(
                 .reset_index()
                 .sort_values(by="importance", ascending=False)
             )
-        df_fi.to_sql(
-            "feature_importance", conn, if_exists="replace", index=False
-        )
+        df_fi.to_sql("feature_importance", conn, if_exists="replace", index=False)
         print("Table 'feature_importance' enregistrée.")
 
     conn.close()

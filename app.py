@@ -3,12 +3,13 @@ import sqlite3
 import requests
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(
-    page_title="Dashboard Risque Crédit", layout="wide"
-)
+st.set_page_config(page_title="Dashboard Risque Crédit", layout="wide")
+
+DECISION_THRESHOLD = 0.30
 
 
 @st.cache_resource
@@ -28,6 +29,7 @@ tab1, tab2, tab3 = st.tabs(
         "📈 Feature Importance Globale",
     ]
 )
+
 
 # --- RECUPERATION DE LA LISTE DES CLIENTS ---
 @st.cache_data
@@ -103,15 +105,13 @@ with tab2:
                 "Les features du modèle sont issues du feature engineering. Affichage des variables brutes disponibles."
             )
             valid_cols = [
-                c
-                for c in db_cols
-                if c not in ["SK_ID_CURR", "TARGET", "DECISION"]
+                c for c in db_cols if c not in ["SK_ID_CURR", "TARGET", "DECISION"]
             ][:top_n_features]
 
         # 4. Construire la liste finale des colonnes à charger
         mandatory = [c for c in ["SK_ID_CURR", "TARGET", "DECISION"] if c in db_cols]
         cols_to_select = mandatory + [c for c in valid_cols if c not in mandatory]
-        
+
         # Échappement des noms de colonnes avec des guillemets pour éviter tout problème de syntaxe SQL
         cols_str = ", ".join([f'"{c}"' for c in cols_to_select])
 
@@ -125,13 +125,8 @@ with tab2:
             st.session_state.edited_data = df_res
 
     # Affichage du tableau modifiable
-    if (
-        "edited_data" in st.session_state
-        and st.session_state.edited_data is not None
-    ):
-        st.subheader(
-            f"Valeurs pour le client {selected_client}"
-        )
+    if "edited_data" in st.session_state and st.session_state.edited_data is not None:
+        st.subheader(f"Valeurs pour le client {selected_client}")
 
         edited_df = st.data_editor(
             st.session_state.edited_data,
@@ -140,7 +135,7 @@ with tab2:
         )
 
         st.markdown("---")
-#### Appel à FastAPI
+        #### Appel à FastAPI
 
         if st.button("Prédiction", key="predict_api"):
             try:
@@ -170,37 +165,69 @@ with tab2:
                 )
 
                 # Conversion des NaN en None sans convertir les catégories en nombres
-                features_dict = (
-                    features_df.iloc[0]
-                    .replace({np.nan: None})
-                    .to_dict()
-                )
+                features_dict = features_df.iloc[0].replace({np.nan: None}).to_dict()
 
                 payload = {
                     "SK_ID_CURR": int(selected_client),
                     "features": features_dict,
                 }
 
-                API_URL = os.getenv(
-                    "API_URL",
-                    "http://127.0.0.1:8000"
-                )
-                
+                API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+
                 response = requests.post(
                     f"{API_URL}/predict",
                     json=payload,
                     timeout=30,
                 )
- 
+
                 if response.ok:
                     result = response.json()
                     score_pred = float(result["probability"])
                     decision_sim = result["decision"]
 
                     st.subheader("Résultat de la prédiction")
-                    st.metric(
-                        "Probabilité de défaillance",
-                        f"{score_pred * 100:.2f} %",
+                    score_percent = score_pred * 100
+                    gauge_fig = go.Figure(
+                        go.Indicator(
+                            mode="gauge+number",
+                            value=score_percent,
+                            number={"suffix": "%", "valueformat": ".2f"},
+                            title={"text": "Probabilité de défaillance"},
+                            gauge={
+                                "axis": {
+                                    "range": [0, 100],
+                                    "tickmode": "array",
+                                    "tickvals": [0, DECISION_THRESHOLD * 100, 100],
+                                    "ticktext": ["0 %", "30 %", "100 %"],
+                                },
+                                "steps": [
+                                    {
+                                        "range": [0, DECISION_THRESHOLD * 100],
+                                        "color": "#d9eee7",
+                                    },
+                                    {
+                                        "range": [DECISION_THRESHOLD * 100, 100],
+                                        "color": "#f7dfdc",
+                                    },
+                                ],
+                                "bar": {
+                                    "color": "#d95d39"
+                                    if score_pred >= DECISION_THRESHOLD
+                                    else "#258f73"
+                                },
+                                "threshold": {
+                                    "line": {"color": "#252525", "width": 4},
+                                    "thickness": 0.8,
+                                    "value": DECISION_THRESHOLD * 100,
+                                },
+                            },
+                        )
+                    )
+                    gauge_fig.update_layout(height=280, margin={"t": 50, "b": 20})
+                    st.plotly_chart(
+                        gauge_fig,
+                        use_container_width=True,
+                        key="prediction_gauge",
                     )
 
                     if decision_sim == "APPROVED":
@@ -209,8 +236,7 @@ with tab2:
                         st.error(f"Décision : **{decision_sim}**")
                 else:
                     st.error(
-                        f"Erreur FastAPI ({response.status_code}) : "
-                        f"{response.text}"
+                        f"Erreur FastAPI ({response.status_code}) : {response.text}"
                     )
 
             except requests.exceptions.ConnectionError:
@@ -231,7 +257,9 @@ with tab3:
     top_n = st.slider("Nombre de variables à afficher :", 5, 50, 20)
 
     try:
-        query_fi = f"SELECT * FROM feature_importance ORDER BY importance DESC LIMIT {top_n}"
+        query_fi = (
+            f"SELECT * FROM feature_importance ORDER BY importance DESC LIMIT {top_n}"
+        )
         df_fi = pd.read_sql_query(query_fi, conn)
 
         if not df_fi.empty:

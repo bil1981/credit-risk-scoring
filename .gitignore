@@ -2,18 +2,19 @@
 __pycache__/
 .pytest_cache/
 *.pkl
-mlflow.db
 
-*.db
 mlruns/
 mlartifacts/
 .vscode/
 *.csv
 *.parquet
-
 *.py[cod]
 .pytest_cache/
+
+# Fichiers personnels
 README_pourMoi.md
+inspect_notebook.py
+profile_results.prof
 
 # Bases de données locales
 *.db
@@ -22,6 +23,7 @@ README_pourMoi.md
 *.db
 credit_risk.db
 home_credit.db
+mlflow.db
 
 # Environnement virtuel
 .venv/
@@ -40,11 +42,11 @@ reports/
 # notebooks
 *.ipynb
 
+#dossier data à ne pas inclure
+P10_DSML/
 
-
+#----------------------------------------------------
 #ignorer les modèles enregistrés ainsi que la base de données de suivi MLflow
 #ignorer les fichiers src et .parquet générés par le code source, ainsi que les fichiers de cache et de configuration de l'environnement de développement.
-#Ne commite jamais les fichiers de ton environnement virtuel (.venv). Cela alourdit le dépôt, ralentit Git, et rend le projet incompatible d'une machine à une autre. Seul le fichier requirements.txt doit être versionné pour décrire les dépendances.
-
-
-
+#Ne commite jamais les fichiers de l'environnement virtuel (.venv). Cela alourdit le dépôt, ralentit Git, et rend le projet incompatible d'une machine à une autre. Seul le fichier requirements.txt doit être versionné pour décrire les dépendances.
+#----------------------------------------------------

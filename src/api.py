@@ -9,6 +9,8 @@ import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from validation.schemas import validate_credit_data
+
 
 # ============================================================
 # CHEMINS
@@ -28,6 +30,7 @@ DECISION_THRESHOLD = 0.30
 # MODELES PYDANTIC
 # ============================================================
 
+
 class PredictionRequest(BaseModel):
     SK_ID_CURR: int
     features: Dict[str, Any] = Field(default_factory=dict)
@@ -42,6 +45,7 @@ class PredictionResponse(BaseModel):
 # ============================================================
 # LOGGING CSV
 # ============================================================
+
 
 def log_prediction(
     payload: PredictionRequest,
@@ -82,20 +86,13 @@ def log_prediction(
         # fichier inexistant OU fichier vide
         # ----------------------------------------------------
 
-        if (
-            not PRODUCTION_LOG_PATH.exists()
-            or PRODUCTION_LOG_PATH.stat().st_size == 0
-        ):
-
+        if not PRODUCTION_LOG_PATH.exists() or PRODUCTION_LOG_PATH.stat().st_size == 0:
             new_row.to_csv(
                 PRODUCTION_LOG_PATH,
                 index=False,
             )
 
-            print(
-                f"Production log créé : "
-                f"{PRODUCTION_LOG_PATH}"
-            )
+            print(f"Production log créé : {PRODUCTION_LOG_PATH}")
 
             return
 
@@ -122,47 +119,32 @@ def log_prediction(
         )
 
     except Exception as error:
-
         # IMPORTANT :
         # une erreur de logging ne doit jamais
         # provoquer une erreur FastAPI 500
 
-        print(
-            f"Erreur logging CSV : {error}"
-        )
+        print(f"Erreur logging CSV : {error}")
 
 
 # ============================================================
 # LIFESPAN
 # ============================================================
 
-@asynccontextmanager  # il sert à gérer le cycle de vie de l'application FastAPI 
-async def lifespan(app: FastAPI):
 
+@asynccontextmanager  # il sert à gérer le cycle de vie de l'application FastAPI
+async def lifespan(app: FastAPI):
     if not MODEL_PATH.exists():
-        raise RuntimeError(
-            f"Modèle introuvable : {MODEL_PATH}"
-        )
+        raise RuntimeError(f"Modèle introuvable : {MODEL_PATH}")
 
     # Charger le modèle LightGBM
-    app.state.model = lgb.Booster(
-        model_file=str(MODEL_PATH)
-    )
+    app.state.model = lgb.Booster(model_file=str(MODEL_PATH))
 
     # Utiliser les noms des variables réellement enregistrés dans le modèle
-    app.state.feature_names = list(
-        app.state.model.feature_name()
-    )
+    app.state.feature_names = list(app.state.model.feature_name())
 
-    print(
-        f" {len(app.state.feature_names)} variables "
-        f"chargées depuis LightGBM"
-    )
+    print(f" {len(app.state.feature_names)} variables chargées depuis LightGBM")
 
-    print(
-        f"Logging production : "
-        f"{PRODUCTION_LOG_PATH}"
-    )
+    print(f"Logging production : {PRODUCTION_LOG_PATH}")
 
     yield
 
@@ -182,6 +164,7 @@ app = FastAPI(
 # PREDICTION
 # ============================================================
 
+
 @app.post(
     "/predict",
     response_model=PredictionResponse,
@@ -190,26 +173,29 @@ def predict(
     payload: PredictionRequest,
     request: Request,
 ) -> PredictionResponse:
-
     start_time = perf_counter()
 
     model = request.app.state.model
     feature_names = request.app.state.feature_names
 
     try:
-
         # ====================================================
         # 1. DONNEES RECUES
         # ====================================================
 
-        raw_df = pd.DataFrame(
-            [payload.features]
-        )
+        df = pd.DataFrame([payload.features])
 
-        # Ajouter SK_ID_CURR uniquement si le modèle
-        # l'attend
-        if "SK_ID_CURR" in feature_names:
-            raw_df["SK_ID_CURR"] = payload.SK_ID_CURR
+        df["SK_ID_CURR"] = payload.SK_ID_CURR
+
+        try:
+            df = validate_credit_data(df)
+        except Exception as error:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Validation des données échouée : {error}"),
+            ) from error
+
+        raw_df = df
 
         # ====================================================
         # 2. SUPPRESSION TARGET / DECISION
@@ -227,14 +213,9 @@ def predict(
         # 3. VARIABLES CATEGORIELLES
         # ====================================================
 
-        categorical_columns = (
-            raw_df
-            .select_dtypes(
-                include=["object", "category"]
-            )
-            .columns
-            .tolist()
-        )
+        categorical_columns = raw_df.select_dtypes(
+            include=["object", "category"]
+        ).columns.tolist()
 
         encoded_df = pd.get_dummies(
             raw_df,
@@ -265,7 +246,6 @@ def predict(
         # ====================================================
 
         if encoded_df.shape[1] != model.num_feature():
-
             raise HTTPException(
                 status_code=500,
                 detail=(
@@ -279,23 +259,15 @@ def predict(
         # 7. PREDICTION
         # ====================================================
 
-        probability = float(
-            model.predict(encoded_df)[0]
-        )
+        probability = float(model.predict(encoded_df)[0])
 
-        decision = (
-            "REFUSED"
-            if probability >= DECISION_THRESHOLD
-            else "APPROVED"
-        )
+        decision = "REFUSED" if probability >= DECISION_THRESHOLD else "APPROVED"
 
         # ====================================================
         # 8. LATENCE
         # ====================================================
 
-        latency_ms = (
-            perf_counter() - start_time
-        ) * 1000
+        latency_ms = (perf_counter() - start_time) * 1000
 
         # ====================================================
         # 9. LOG PRODUCTION
@@ -323,12 +295,9 @@ def predict(
         raise
 
     except Exception as error:
+        latency_ms = (perf_counter() - start_time) * 1000
 
-        latency_ms = (
-            perf_counter() - start_time
-        ) * 1000
-
-        # Logger l'erreur, 
+        # Logger l'erreur,
         log_prediction(
             payload=payload,
             probability=None,
@@ -339,9 +308,5 @@ def predict(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                f"Erreur lors de la prédiction : {error}"
-            ),
+            detail=(f"Erreur lors de la prédiction : {error}"),
         )
-
-

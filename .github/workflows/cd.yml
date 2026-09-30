@@ -1,4 +1,4 @@
-#Ce workflow se déclenche à chaque push sur la branche main (ou lors de la création d'un tag de version v*). 
+#Ce workflow se déclenche à chaque push sur la branche main (ou lors de la création d'un tag de version v*).
 #Il construit l'image Docker unique et la publie sur le registre GitHub Packages (GHCR)
 
 name: CD -- Build & Push Docker Image

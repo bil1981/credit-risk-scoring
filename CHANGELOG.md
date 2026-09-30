@@ -12,6 +12,20 @@ Le versionnement suit les principes du **Semantic Versioning (SemVer)** :
 
 ---
 
+## [Unreleased]
+
+### Added
+
+* Ajout dans le README de la procédure d'installation et d'exécution de l'évaluation RAGAS.
+* Documentation des quatre métriques RAGAS et du fichier de résultats `ragas_evaluation_results.csv`.
+
+### Changed
+
+* Mise à jour des dépendances LangChain de `P10_DSML` pour conserver leur compatibilité avec RAGAS et le SDK Mistral utilisé par le projet.
+* Limitation de l'évaluation RAGAS à un worker et documentation de la gestion des limites de débit Mistral (`HTTP 429`).
+
+---
+
 ## [1.0.0] - 2026-09-19
 
 ### Added

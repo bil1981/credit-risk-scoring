@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 #Définit la liste des conteneurs à lancer. Ici, un seul service nommé app_complete
 services:

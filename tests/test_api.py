@@ -1,30 +1,67 @@
-from api import app
+from src.api import app
 
+
+# Vérifie que l'application FastAPI est correctement créée.
 def test_app_exists():
-    assert app is not None # vérifie probablement que l application FastAPI existe bien
-    assert app.title == "Credit Risk API" # 
+    assert app is not None
+    assert app.title == "Credit Risk API"
 
+
+# Vérifie qu'une requête complète retourne une prédiction valide.
 def test_predict_endpoint_returns_valid_response(client):
-    payload = {"SK_ID_CURR": 100001, "features": {"AMT_INCOME_TOTAL": 135000, "AMT_CREDIT": 568800, "AMT_ANNUITY": 20500, "DAYS_BIRTH": -12000, "DAYS_EMPLOYED": -2000}}
+    # Prépare un jeu de données contenant les principales variables de crédit.
+    payload = {
+        "SK_ID_CURR": 100001,
+        "features": {
+            "AMT_INCOME_TOTAL": 135000,
+            "AMT_CREDIT": 568800,
+            "AMT_ANNUITY": 20500,
+            "DAYS_BIRTH": -12000,
+            "DAYS_EMPLOYED": -2000,
+        },
+    }
     response = client.post("/predict", json=payload)
-    assert response.status_code == 200 # vérifie l'endpoint /predict et que la requête valide vers /predict retourne une réponse correcte
+    # Une requête valide doit retourner le statut HTTP 200.
+    assert response.status_code == 200
     data = response.json()
+    # Vérifie l'identifiant retourné par l'API.
     assert data["SK_ID_CURR"] == 100001
+    # Vérifie que la probabilité est numérique et comprise entre 0 et 1.
     assert isinstance(data["probability"], float)
     assert 0.0 <= data["probability"] <= 1.0
+    # Vérifie que la décision correspond à une valeur autorisée.
     assert data["decision"] in {"APPROVED", "REFUSED"}
 
+
+# Vérifie que l'identifiant client est obligatoire dans la requête.
 def test_predict_requires_sk_id_curr(client):
-    # vérifie que sk_id_curr est obligatoire
     assert client.post("/predict", json={"features": {}}).status_code == 422
 
+
+# Vérifie que la réponse contient exactement les champs attendus.
 def test_predict_response_contains_expected_fields(client):
-    # vérifie que la réponse de l API contient bien les champs attendus
     response = client.post("/predict", json={"SK_ID_CURR": 100001, "features": {}})
     assert response.status_code == 200
     assert set(response.json()) == {"SK_ID_CURR", "probability", "decision"}
 
+
+# Vérifie qu'un identifiant de type incorrect est rejeté par Pydantic.
 def test_predict_rejects_invalid_sk_id_curr_type(client):
-    # vérifie que l'API refuse un mauvais type pour sk_id_curr, ex.  "sk_id_curr": "bonjour"
     response = client.post("/predict", json={"SK_ID_CURR": "abc", "features": {}})
     assert response.status_code == 422
+
+
+# Vérifie que Pandera rejette un montant de crédit négatif.
+def test_predict_rejects_invalid_credit_amount(client):
+    response = client.post(
+        "/predict",
+        json={
+            "SK_ID_CURR": 100001,
+            "features": {"AMT_CREDIT": -1},
+        },
+    )
+
+    # Les erreurs de validation des données sont retournées avec le statut 422.
+    assert response.status_code == 422
+    # Vérifie que l'erreur provient bien de la validation Pandera.
+    assert "Validation des données échouée" in response.json()["detail"]
